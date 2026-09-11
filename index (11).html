@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>도시 계획 설계소 - 미션 시뮬레이터</title>
+  <style>
+    :root {
+      --primary: #228be6;
+      --success: #40c057;
+      --danger: #fa5252;
+      --bg: #f1f3f5;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { display: flex; height: 100vh; background: var(--bg); overflow: hidden; }
+
+    /* 좌측 사이드바 */
+    #sidebar {
+      width: 420px;
+      background: #ffffff;
+      border-right: 1px solid #dee2e6;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      box-shadow: 4px 0 15px rgba(0,0,0,0.05);
+      z-index: 10;
+    }
+    .sidebar-content {
+      padding: 18px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      flex: 1;
+    }
+    
+    /* 미션 선택 헤더 */
+    .mission-selector {
+      background: #e7f5ff;
+      border: 1px solid #a5d8ff;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .mission-selector select {
+      width: 100%;
+      padding: 8px;
+      font-size: 14px;
+      font-weight: bold;
+      border-radius: 4px;
+      border: 1px solid #74c0fc;
+      background: white;
+      margin-top: 6px;
+      cursor: pointer;
+    }
+    .mission-desc { font-size: 12px; color: #495057; margin-top: 6px; line-height: 1.4; }
+
+    /* 대시보드 */
+    .dashboard {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .score-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .grade-tag {
+      font-size: 28px;
+      font-weight: 900;
+      color: var(--primary);
+      padding: 2px 10px;
+      border: 2px solid var(--primary);
+      border-radius: 6px;
+    }
+
+    /* 목표 체크리스트 */
+    .goal-list { list-style: none; font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
+    .goal-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; background: white; border-radius: 4px; border: 1px solid #e9ecef; }
+    .goal-item.passed { border-left: 4px solid var(--success); }
+    .goal-item.failed { border-left: 4px solid var(--danger); }
+
+    /* 툴 팔레트 */
+    h3 { font-size: 12px; color: #868e96; text-transform: uppercase; margin-top: 6px; }
+    .tool-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .tool-card {
+      background: #ffffff;
+      border: 1px solid #dee2e6;
+      border-radius: 6px;
+      padding: 8px 4px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .tool-card:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.06); border-color: #74c0fc; }
+    .tool-card.active { border-color: var(--primary); background: #e7f5ff; box-shadow: 0 0 0 2px var(--primary); }
+    .tool-icon { font-size: 20px; }
+    .tool-name { font-size: 11px; margin-top: 4px; color: #333; text-align: center; }
+
+    /* 메인 캔버스 뷰 */
+    #main-view {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .hud {
+      position: absolute;
+      top: 15px;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(4px);
+      padding: 8px 20px;
+      border-radius: 30px;
+      font-size: 13px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      display: flex;
+      gap: 20px;
+      font-weight: bold;
+      color: #343a40;
+    }
+    canvas {
+      border-radius: 8px;
+      box-shadow: 0 12px 36px rgba(0,0,0,0.15);
+      cursor: pointer;
+    }
+    .ctrl-hints {
+      position: absolute;
+      bottom: 15px;
+      font-size: 12px;
+      color: #868e96;
+      background: rgba(255,255,255,0.8);
+      padding: 4px 12px;
+      border-radius: 12px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div class="sidebar-content">
+    <div>
+      <h2 style="font-size: 18px; color: #1c7ed6;">🏛️ 나만의 도시 설계소</h2>
+      <p style="font-size: 11px; color: #868e96;">가로·세로 30km 구역 도시계획 프로젝트</p>
+    </div>
+
+    <!-- 미션 선택창 -->
+    <div class="mission-selector">
+      <label style="font-size: 12px; font-weight: bold; color: #1864ab;">🎯 건설 미션 선택</label>
+      <select id="missionSelect" onchange="switchMission(this.value)">
+        <option value="eco">1. 친환경 생태·교육 전원도시</option>
+        <option value="metro">2. 첨단 산업 메트로폴리스</option>
+        <option value="smart">3. 자족형 스마트 신도시</option>
+      </select>
+      <div class="mission-desc" id="missionDesc"></div>
+    </div>
+
+    <!-- 종합 점수 대시보드 -->
+    <div class="dashboard">
+      <div class="score-banner">
+        <div>
+          <span style="font-size: 11px; color: #868e96;">종합 계획 평가</span>
+          <div style="font-size: 24px; font-weight: 900;" id="scoreText">0점</div>
+        </div>
+        <div class="grade-tag" id="gradeBadge">-</div>
+      </div>
+      <ul class="goal-list" id="goalChecklist"></ul>
+    </div>
+
+    <!-- 카테고리별 건설 팔레트 -->
+    <div>
+      <h3>자연 & 인프라</h3>
+      <div class="tool-grid" id="tools-nature"></div>
+    </div>
+    <div>
+      <h3>주거 & 교육</h3>
+      <div class="tool-grid" id="tools-living"></div>
+    </div>
+    <div>
+      <h3>상업 & 업무 & 산업</h3>
+      <div class="tool-grid" id="tools-industry"></div>
+    </div>
+    <div>
+      <h3>행정 & 공공 & 환경시설</h3>
+      <div class="tool-grid" id="tools-public"></div>
+    </div>
+
+    <button onclick="clearGrid()" style="padding: 10px; background: #fa5252; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">구역 전체 재개발 (초기화)</button>
+  </div>
+</div>
+
+<div id="main-view">
+  <div class="hud">
+    <span>인구: <span id="hudPop" style="color: #1c7ed6;">0</span>명</span>
+    <span>녹지율: <span id="hudNature" style="color: #2b8a3e;">0%</span> / 30%</span>
+    <span>일자리 충족률: <span id="hudJob">0%</span></span>
+  </div>
+
+  <canvas id="cityCanvas" width="640" height="640"></canvas>
+  <div class="ctrl-hints">마우스 좌클릭: 시설 설치 | 마우스 우클릭: 철거</div>
+</div>
+
+<script>
+  // 1. 미션 데이터 정의
+  const MISSIONS = {
+    eco: {
+      name: "친환경 생태·교육 전원도시",
+      desc: "자연환경(산/하천/공원)을 20~30% 확보하고, 공장이나 소각시설 없이 쾌적한 주택단지와 우수한 교육망(학교 3개 이상)을 갖춘 도시를 완성하세요.",
+      validate: (stats) => [
+        { label: "자연환경 20% 이상 30% 이하", ok: stats.natureRatio >= 20 && stats.natureRatio <= 30 },
+        { label: "초·중·고 교육시설 3개 이상", ok: (stats.counts['school'] || 0) >= 3 },
+        { label: "공해·소각 시설 0개 유지", ok: (stats.counts['factory'] || 0) === 0 && (stats.counts['waste'] || 0) === 0 },
+        { label: "단독주택 10개 이상 건립", ok: (stats.counts['house'] || 0) >= 10 },
+        { label: "모든 주거지 통학권(3km내 학교) 확보", ok: stats.schoolCoverage >= 0.8 && stats.residences > 0 }
+      ]
+    },
+    metro: {
+      name: "첨단 산업 메트로폴리스",
+      desc: "높은 인구 밀도와 막강한 일자리를 창출하는 대도시를 만드세요. 아파트 8개 이상, 업무빌딩 6개 이상, 철도 및 발전시설이 필수입니다.",
+      validate: (stats) => [
+        { label: "계획 인구 15,000명 돌파", ok: stats.population >= 15000 },
+        { label: "업무 빌딩 6개 이상", ok: (stats.counts['office'] || 0) >= 6 },
+        { label: "아파트 단지 8개 이상", ok: (stats.counts['apt'] || 0) >= 8 },
+        { label: "에너지 공급(발전소) 확보", ok: (stats.counts['power'] || 0) >= 1 },
+        { label: "철도/역세권 인프라 5칸 이상", ok: ((stats.counts['rail'] || 0) + (stats.counts['station'] || 0)) >= 5 },
+        { label: "자연환경 비율 30% 이하 규정 준수", ok: stats.natureRatio <= 30 }
+      ]
+    },
+    smart: {
+      name: "자족형 스마트 신도시",
+      desc: "행정·주거·상업이 조화로운 도시입니다. 시청, 병원/경찰서, 대형상업시설, 공원을 균형 있게 배치하여 높은 적합도를 기록하세요.",
+      validate: (stats) => [
+        { label: "행정 관공서(시청) 1개 건립", ok: (stats.counts['cityhall'] || 0) >= 1 },
+        { label: "치안/안전(경찰/병원) 2개 이상", ok: (stats.counts['hospital'] || 0) >= 2 },
+        { label: "대형 상업시설 2개 이상", ok: (stats.counts['mall'] || 0) >= 2 },
+        { label: "휴식 공원 2개 이상", ok: (stats.counts['park'] || 0) >= 2 },
+        { label: "직주근접 일자리 충족률 60% 이상", ok: stats.jobCoverage >= 0.6 && stats.residences > 0 },
+        { label: "자연환경 비율 30% 이하 규정 준수", ok: stats.natureRatio <= 30 }
+      ]
+    }
+  };
+
+  // 2. 카테고리 요소 & 렌더링 스타일 (건물 3D 입체 블록 느낌 시각화)
+  const ITEMS = {
+    // 자연
+    mountain: { name: '산지', icon: '⛰️', group: 'tools-nature', cat: 'nature', roof: '#5c8001', wall: '#3f5902' },
+    river:    { name: '하천/수변', icon: '🌊', group: 'tools-nature', cat: 'nature', roof: '#48cae4', wall: '#0096c7' },
+    park:     { name: '공원', icon: '🌳', group: 'tools-nature', cat: 'nature', roof: '#70e000', wall: '#38b000' },
+    // 인프라
+    road:     { name: '도로망', icon: '🛣️', group: 'tools-nature', cat: 'infra', roof: '#495057', wall: '#343a40' },
+    rail:     { name: '철도', icon: '🛤️', group: 'tools-nature', cat: 'infra', roof: '#6c757d', wall: '#495057' },
+    station:  { name: '철도역', icon: '🚉', group: 'tools-nature', cat: 'infra', roof: '#ff922b', wall: '#d9480f' },
+    // 주거/교육
+    house:    { name: '단독주택', icon: '🏡', group: 'tools-living', cat: 'residence', pop: 300, roof: '#ff922b', wall: '#e8590c' },
+    apt:      { name: '아파트', icon: '🏢', group: 'tools-living', cat: 'residence', pop: 1800, roof: '#845ef7', wall: '#5f3dc4' },
+    school:   { name: '학교', icon: '🏫', group: 'tools-living', cat: 'edu', roof: '#ffd43b', wall: '#f59f00' },
+    // 상업/산업
+    office:   { name: '업무빌딩', icon: '🏙️', group: 'tools-industry', cat: 'work', jobs: 800, roof: '#339af0', wall: '#1864ab' },
+    mall:     { name: '상업시설', icon: '🛍️', group: 'tools-industry', cat: 'work', jobs: 400, roof: '#f06595', wall: '#c2255c' },
+    power:    { name: '발전소', icon: '⚡', group: 'tools-industry', cat: 'power', roof: '#ffa94d', wall: '#d9480f' },
+    factory:  { name: '공업단지', icon: '🏭', group: 'tools-industry', cat: 'pollution', jobs: 600, roof: '#868e96', wall: '#495057' },
+    // 공공/환경
+    cityhall: { name: '시청', icon: '🏛️', group: 'tools-public', cat: 'public', roof: '#748ffc', wall: '#4263eb' },
+    hospital: { name: '병원/안전', icon: '🏥', group: 'tools-public', cat: 'safety', roof: '#ff8787', wall: '#e03131' },
+    waste:    { name: '폐기물처리', icon: '☣️', group: 'tools-public', cat: 'pollution', roof: '#b2f2bb', wall: '#2b8a3e' }
+  };
+
+  const GRID_SIZE = 16; // 16x16 (총 256셀)
+  const CELL_PX = 40;   // 640px / 16
+  const grid = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(null));
+
+  let currentMission = 'eco';
+  let activeTool = 'road';
+
+  const canvas = document.getElementById('cityCanvas');
+  const ctx = canvas.getContext('2d');
+
+  function initUI() {
+    // 툴 팔레트 생성
+    for (const [key, item] of Object.entries(ITEMS)) {
+      const container = document.getElementById(item.group);
+      const card = document.createElement('div');
+      card.className = `tool-card ${key === activeTool ? 'active' : ''}`;
+      card.innerHTML = `<span class="tool-icon">${item.icon}</span><span class="tool-name">${item.name}</span>`;
+      card.onclick = () => {
+        document.querySelectorAll('.tool-card').forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        activeTool = key;
+      };
+      container.appendChild(card);
+    }
+    switchMission('eco');
+  }
+
+  function switchMission(missionKey) {
+    currentMission = missionKey;
+    document.getElementById('missionDesc').innerText = MISSIONS[missionKey].desc;
+    evaluateAndRender();
+  }
+
+  // 3. 건물 입체 시각화 렌더러
+  function drawCity() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    for (let r = 0; r < GRID_SIZE; r++) {
+      for (let c = 0; c < GRID_SIZE; c++) {
+        const x = c * CELL_PX;
+        const y = r * CELL_PX;
+        const key = grid[r][c];
+
+        // 기본 땅 (바닥 그리드)
+        ctx.fillStyle = '#ebfbee';
+        ctx.fillRect(x, y, CELL_PX, CELL_PX);
+
+        ctx.strokeStyle = '#d3f9d8';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, y, CELL_PX, CELL_PX);
+
+        if (!key) continue;
+
+        const item = ITEMS[key];
+
+        if (item.cat === 'infra') {
+          // 도로는 평면 아스팔트 질감
+          ctx.fillStyle = item.roof;
+          ctx.fillRect(x + 2, y + 2, CELL_PX - 4, CELL_PX - 4);
+          ctx.strokeStyle = '#fff';
+          ctx.setLineDash([4, 4]);
+          ctx.strokeRect(x + 6, y + 6, CELL_PX - 12, CELL_PX - 12);
+          ctx.setLineDash([]);
+        } else if (item.cat === 'nature' && key !== 'mountain') {
+          // 물 / 잔디 공원
+          ctx.fillStyle = item.roof;
+          ctx.beginPath();
+          ctx.roundRect(x + 2, y + 2, CELL_PX - 4, CELL_PX - 4, 8);
+          ctx.fill();
+        } else {
+          // 건물/산: 입체 2.5D 블록 렌더링 (그림자 + 옆면 + 윗면)
+          // 그림자
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+          ctx.fillRect(x + 6, y + 8, CELL_PX - 8, CELL_PX - 8);
+
+          // 건물 옆면 (어두운 벽체)
+          ctx.fillStyle = item.wall;
+          ctx.fillRect(x + 4, y + 6, CELL_PX - 8, CELL_PX - 10);
+
+          // 건물 윗면 (밝은 지붕)
+          ctx.fillStyle = item.roof;
+          ctx.fillRect(x + 4, y + 3, CELL_PX - 8, CELL_PX - 12);
+
+          // 테두리 하이라이트
+          ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+          ctx.strokeRect(x + 4, y + 3, CELL_PX - 8, CELL_PX - 12);
+        }
+
+        // 아이콘 배지
+        ctx.font = '16px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(item.icon, x + CELL_PX / 2, y + CELL_PX / 2);
+      }
+    }
+  }
+
+  // 4. 공간 분석 및 채점 엔진
+  function evaluateAndRender() {
+    let stats = {
+      counts: {},
+      population: 0,
+      totalJobs: 0,
+      residences: 0,
+      natureCount: 0,
+      schoolCoverage: 0,
+      jobCoverage: 0
+    };
+
+    let resList = [];
+    let schoolList = [];
+    let workList = [];
+
+    for (let r = 0; r < GRID_SIZE; r++) {
+      for (let c = 0; c < GRID_SIZE; c++) {
+        const k = grid[r][c];
+        if (!k) continue;
+
+        stats.counts[k] = (stats.counts[k] || 0) + 1;
+        const meta = ITEMS[k];
+
+        if (meta.pop) stats.population += meta.pop;
+        if (meta.jobs) stats.totalJobs += meta.jobs;
+        if (meta.cat === 'nature') stats.natureCount++;
+
+        if (meta.cat === 'residence') resList.push({ r, c });
+        if (meta.cat === 'edu') schoolList.push({ r, c });
+        if (meta.cat === 'work' || meta.cat === 'pollution') workList.push({ r, c });
+      }
+    }
+
+    stats.residences = resList.length;
+    stats.natureRatio = Math.round((stats.natureCount / (GRID_SIZE * GRID_SIZE)) * 100);
+
+    // 주거지 기반 통학/직장 접근성 연산
+    let coveredSchools = 0;
+    let coveredJobs = 0;
+    resList.forEach(h => {
+      if (schoolList.some(s => Math.hypot(s.r - h.r, s.c - h.c) <= 3)) coveredSchools++;
+      if (workList.some(w => Math.hypot(w.r - h.r, w.c - h.c) <= 4)) coveredJobs++;
+    });
+
+    stats.schoolCoverage = resList.length > 0 ? (coveredSchools / resList.length) : 0;
+    stats.jobCoverage = resList.length > 0 ? (coveredJobs / resList.length) : 0;
+
+    // HUD 갱신
+    document.getElementById('hudPop').innerText = stats.population.toLocaleString();
+    document.getElementById('hudNature').innerText = `${stats.natureRatio}%`;
+    document.getElementById('hudJob').innerText = `${Math.round(stats.jobCoverage * 100)}%`;
+
+    // 미션 목표 판정
+    const mission = MISSIONS[currentMission];
+    const goals = mission.validate(stats);
+    let passedCount = 0;
+
+    const checklist = document.getElementById('goalChecklist');
+    checklist.innerHTML = '';
+
+    goals.forEach(g => {
+      if (g.ok) passedCount++;
+      const li = document.createElement('li');
+      li.className = `goal-item ${g.ok ? 'passed' : 'failed'}`;
+      li.innerHTML = `<span>${g.label}</span><span>${g.ok ? '✅ 달성' : '❌ 미달'}</span>`;
+      checklist.appendChild(li);
+    });
+
+    // 점수 & 등급 산정
+    const score = Math.round((passedCount / goals.length) * 100);
+    document.getElementById('scoreText').innerText = `${score}점`;
+
+    const gradeBadge = document.getElementById('gradeBadge');
+    if (score === 100) {
+      gradeBadge.innerText = 'S (완벽)';
+      gradeBadge.style.color = '#2b8a3e';
+      gradeBadge.style.borderColor = '#2b8a3e';
+    } else if (score >= 80) {
+      gradeBadge.innerText = 'A (우수)';
+      gradeBadge.style.color = '#1c7ed6';
+      gradeBadge.style.borderColor = '#1c7ed6';
+    } else if (score >= 60) {
+      gradeBadge.innerText = 'B (보통)';
+      gradeBadge.style.color = '#f59f00';
+      gradeBadge.style.borderColor = '#f59f00';
+    } else {
+      gradeBadge.innerText = 'C (미흡)';
+      gradeBadge.style.color = '#fa5252';
+      gradeBadge.style.borderColor = '#fa5252';
+    }
+
+    drawCity();
+  }
+
+  // 마우스 클릭 이벤트
+  function handleCanvasClick(e, isRight) {
+    const rect = canvas.getBoundingClientRect();
+    const c = Math.floor((e.clientX - rect.left) / CELL_PX);
+    const r = Math.floor((e.clientY - rect.top) / CELL_PX);
+
+    if (r < 0 || r >= GRID_SIZE || c < 0 || c >= GRID_SIZE) return;
+
+    if (isRight) {
+      grid[r][c] = null;
+    } else {
+      grid[r][c] = activeTool;
+    }
+    evaluateAndRender();
+  }
+
+  let isMouseDown = false;
+  canvas.addEventListener('mousedown', (e) => {
+    isMouseDown = true;
+    handleCanvasClick(e, e.button === 2);
+  });
+  canvas.addEventListener('mousemove', (e) => {
+    if (isMouseDown) handleCanvasClick(e, e.buttons === 2);
+  });
+  window.addEventListener('mouseup', () => isMouseDown = false);
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+  function clearGrid() {
+    for (let r = 0; r < GRID_SIZE; r++) grid[r].fill(null);
+    evaluateAndRender();
+  }
+
+  initUI();
+  evaluateAndRender();
+</script>
+</body>
+</html>
