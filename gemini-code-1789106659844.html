@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>도시 건설 시뮬레이터</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; display: flex; height: 100vh; font-family: sans-serif; }
+    #sidebar { width: 320px; background: #f8f9fa; border-right: 1px solid #ddd; padding: 15px; overflow-y: auto; }
+    #canvas-container { flex: 1; background: #e9ecef; display: flex; align-items: center; justify-content: center; }
+    canvas { background: #ffffff; box-shadow: 0 4px 10px rgba(0,0,0,0.1); cursor: crosshair; }
+    h3 { margin-top: 15px; margin-bottom: 8px; font-size: 15px; color: #333; }
+    .btn-group { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+    button { padding: 6px 10px; font-size: 12px; cursor: pointer; border: 1px solid #ccc; background: white; border-radius: 4px; }
+    button.active { background: #007bff; color: white; border-color: #007bff; }
+    .status-list { font-size: 12px; list-style: none; padding: 0; }
+    .status-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed #eee; }
+    .valid { color: green; font-weight: bold; }
+    .invalid { color: #dc3545; }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h2>도시 건설 요소</h2>
+  
+  <h3>1. 요소 선택</h3>
+  <div class="btn-group" id="palette"></div>
+
+  <h3>2. 건축 기준 달성 현황</h3>
+  <ul class="status-list" id="requirements"></ul>
+  
+  <button id="reset-btn" style="width: 100%; margin-top: 15px; background: #6c757d; color: white;">초기화</button>
+</div>
+
+<div id="canvas-container">
+  <canvas id="cityCanvas" width="800" height="800"></canvas>
+</div>
+
+<script>
+  // 1. 표의 요소 및 규칙 정의
+  const ITEMS = {
+    // 도로 / 자연
+    road: { name: '일반 도로', color: '#555555', type: 'infra' },
+    water: { name: '하천/호수', color: '#4dabf7', type: 'infra' },
+    park: { name: '공원', color: '#51cf66', min: 2, max: 2, count: 0 },
+    // 건물
+    apt: { name: '아파트', color: '#845ef7', min: 10, count: 0 },
+    house: { name: '단독 주택', color: '#ff922b', min: 20, count: 0 },
+    cityhall: { name: '시청', color: '#e03131', min: 1, max: 1, count: 0 },
+    school_elem: { name: '초등학교', color: '#fcc419', min: 3, count: 0 },
+    police: { name: '경찰서', color: '#1c7ed6', min: 1, max: 2, count: 0 },
+    factory: { name: '공장', color: '#868e96', min: 5, count: 0 }
+  };
+
+  let selectedTool = 'road';
+  const TILE_SIZE = 25;
+  const GRID_COUNT = 32; // 800 / 25
+  const grid = Array.from({ length: GRID_COUNT }, () => Array(GRID_COUNT).fill(null));
+
+  const canvas = document.getElementById('cityCanvas');
+  const ctx = canvas.getContext('2d');
+
+  // UI 생성
+  const paletteDiv = document.getElementById('palette');
+  const reqUl = document.getElementById('requirements');
+
+  function initUI() {
+    for (const [key, val] of Object.entries(ITEMS)) {
+      const btn = document.createElement('button');
+      btn.innerText = val.name;
+      btn.dataset.id = key;
+      if (key === selectedTool) btn.classList.add('active');
+      btn.onclick = () => {
+        document.querySelectorAll('#palette button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        selectedTool = key;
+      };
+      paletteDiv.appendChild(btn);
+    }
+    updateStatus();
+  }
+
+  function updateStatus() {
+    reqUl.innerHTML = '';
+    for (const [key, val] of Object.entries(ITEMS)) {
+      if (val.min === undefined) continue;
+      const li = document.createElement('li');
+      li.className = 'status-item';
+      
+      let isValid = val.count >= val.min && (val.max ? val.count <= val.max : true);
+      let conditionText = `${val.min}${val.max ? `~${val.max}` : '개 이상'}`;
+      
+      li.innerHTML = `
+        <span>${val.name} (${conditionText})</span>
+        <span class="${isValid ? 'valid' : 'invalid'}">${val.count}개</span>
+      `;
+      reqUl.appendChild(li);
+    }
+  }
+
+  // 렌더링 함수
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 격자 그리기
+    ctx.strokeStyle = '#f1f3f5';
+    for (let i = 0; i <= GRID_COUNT; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * TILE_SIZE, 0); ctx.lineTo(i * TILE_SIZE, canvas.height);
+      ctx.moveTo(0, i * TILE_SIZE); ctx.lineTo(canvas.width, i * TILE_SIZE);
+      ctx.stroke();
+    }
+
+    // 배치된 타일 렌더링
+    for (let r = 0; r < GRID_COUNT; r++) {
+      for (let c = 0; c < GRID_COUNT; c++) {
+        const itemKey = grid[r][c];
+        if (itemKey) {
+          ctx.fillStyle = ITEMS[itemKey].color;
+          ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        }
+      }
+    }
+  }
+
+  // 마우스 상호작용
+  let isDrawing = false;
+
+  function placeTile(e, isRightClick = false) {
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) / TILE_SIZE);
+    const y = Math.floor((e.clientY - rect.top) / TILE_SIZE);
+
+    if (x < 0 || x >= GRID_COUNT || y < 0 || y >= GRID_COUNT) return;
+
+    const current = grid[y][x];
+
+    if (isRightClick) { // 우클릭: 삭제
+      if (current) {
+        if (ITEMS[current].count !== undefined) ITEMS[current].count--;
+        grid[y][x] = null;
+      }
+    } else { // 좌클릭: 설치
+      if (current !== selectedTool) {
+        if (current && ITEMS[current].count !== undefined) ITEMS[current].count--;
+        grid[y][x] = selectedTool;
+        if (ITEMS[selectedTool].count !== undefined) ITEMS[selectedTool].count++;
+      }
+    }
+    updateStatus();
+    draw();
+  }
+
+  canvas.addEventListener('mousedown', (e) => {
+    isDrawing = true;
+    placeTile(e, e.button === 2);
+  });
+  canvas.addEventListener('mousemove', (e) => {
+    if (isDrawing) placeTile(e, e.buttons === 2);
+  });
+  window.addEventListener('mouseup', () => isDrawing = false);
+  canvas.addEventListener('contextmenu', e => e.preventDefault()); // 우클릭 메뉴 방지
+
+  document.getElementById('reset-btn').onclick = () => {
+    for (let r = 0; r < GRID_COUNT; r++) grid[r].fill(null);
+    for (const key in ITEMS) if (ITEMS[key].count !== undefined) ITEMS[key].count = 0;
+    updateStatus();
+    draw();
+  };
+
+  initUI();
+  draw();
+</script>
+</body>
+</html>
